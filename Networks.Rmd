@@ -1,0 +1,462 @@
+<center><img src="http://i.imgur.com/sSaOozN.png" width="500"></center>
+
+
+## Course: Computational Thinking for Governance Analytics
+
+### Prof. José Manuel Magallanes, PhD 
+
+* Visiting Professor of Computational Policy at Evans School of Public Policy and Governance, and eScience Institute Senior Data Science Fellow, University of Washington.
+* Professor of Government and Political Methodology, Pontificia Universidad Católica del Perú. 
+
+
+
+_____
+
+# Network Analysis in R
+
+
+Plan for this session:
+
+1. [Importing Data and Building a Network](#part1) 
+2. [Exploring Network](#part2) 
+    * [Network as a whole](#part21) 
+    * [Network communities](#part22) 
+    * [Network actors](#part23) 
+    
+3. [Exporting the Network](#part3) 
+
+The network we are going to build is based on a relationship studied in this paper:
+
+<img src="https://github.com/EvansDataScience/CTforGA_Networks/raw/main/paper.png" width="900">
+
+
+In that paper, the researcher builds a matrix of relationships like this:
+
+<img src="https://github.com/EvansDataScience/CTforGA_Networks/raw/main/dataRed.png" width="900">
+
+<a id='part1'></a>
+
+## 1. Importing Data
+
+The data was not available from the author's website, so the matrix you see above was copied and pasted to Excel:
+
+```{r, eval=TRUE, message=FALSE}
+# opening excel
+library(rio)
+
+linkAdjMx='https://github.com/EvansDataScience/CTforGA_Networks/raw/main/dataFigueroa.xlsx'
+
+adjacency=import(linkAdjMx,which = 1)
+```
+
+This data is organized as an adjacency matrix. It should be squared:
+
+```{r, eval=TRUE, message=FALSE}
+dim(adjacency)
+```
+
+Let's take a look:
+```{r, eval=TRUE, message=FALSE}
+head(adjacency)
+```
+
+Let's move the column _Names_ as the  row names, then we will get an squared matrix:
+
+```{r, eval=TRUE, message=FALSE}
+row.names(adjacency)=adjacency$Names
+adjacency$Names=NULL
+
+# then
+head(adjacency)
+```
+
+
+
+This matrix is saved as a _data frame_ has now to be converted into a **matrix**.
+
+```{r, eval=TRUE, message=FALSE}
+adjacency=as.matrix(adjacency) # This coerces the object into a matrix, just in case
+
+
+```
+
+
+From this kind of structure (the adjacency _matrix_), we can easily create a network via **Igraph**:
+
+```{r, eval=TRUE, message=FALSE}
+library(igraph)
+EliteNet=graph.adjacency(adjacency,mode="undirected",weighted=NULL)
+# see it here
+EliteNet
+```
+
+A network is composed of _nodes_ (aka vertices) and _edges_ that connect them. You can know how many you have of each like this:
+```{r, eval=TRUE, message=FALSE}
+vcount(EliteNet) #count of nodes
+```
+
+```{r, eval=TRUE, message=FALSE}
+ecount(EliteNet) #count of edges
+```
+
+
+
+You can take a look at how this network looks like:
+
+```{r, eval=TRUE, message=FALSE}
+plot.igraph(EliteNet,
+            vertex.color = 'yellow',
+            edge.color='lightblue')
+```
+
+So far we only have nodes and their links. Let's bring som information about the nodes:
+
+```{r, eval=TRUE, message=FALSE}
+# The adjacency matrix did not include the nodes attributes.
+attributes=import(linkAdjMx,which = 2)
+head(attributes)
+
+```
+
+
+Igraph can add an attribute easily. Let's proceed with the change:
+```{r, eval=TRUE, message=FALSE}
+EliteNet=set_vertex_attr(EliteNet,"multi",value=attributes$multinational)
+
+#then
+EliteNet
+```
+
+It should have worked:
+```{r, eval=TRUE, message=FALSE}
+vertex_attr_names(EliteNet) 
+```
+
+Before going further, it is good to know if our network is connected:
+
+
+```{r, eval=TRUE, message=FALSE}
+is_connected(EliteNet)
+```
+
+So we have these people in components, how many?
+```{r, eval=TRUE, message=FALSE}
+components(EliteNet)$no
+```
+
+What nodes are in each component?:
+
+```{r, eval=TRUE, message=FALSE}
+groups(components(EliteNet))
+```
+
+Let me add the component as an attribute:
+```{r, eval=TRUE, message=FALSE}
+component=components(EliteNet)$membership
+EliteNet=set_vertex_attr(EliteNet,"component",value=component)
+#then
+EliteNet
+```
+
+
+A visual representation follows:
+
+```{r, eval=TRUE, message=FALSE}
+Labels=component
+numberOfClasses = length(unique(Labels)) 
+
+#preparing color
+library(RColorBrewer)
+colorForScale='Set2'
+colors = brewer.pal(numberOfClasses, colorForScale)
+
+# plotting
+plot.igraph(EliteNet,
+             vertex.color = colors[Labels],
+             edge.color='lightblue')
+```
+
+As we do not have ONE connected network but several components, we can pay attention to the Giant Component (component with max nodes), follow these steps:
+
+1. Get the sizes of each component:
+
+```{r, eval=TRUE, message=FALSE}
+(Sizes=components(EliteNet)$csize)
+```
+
+2. Get the subnet with the largest component:
+```{r, eval=TRUE, message=FALSE}
+# this is a subnet
+EliteNet_giant=induced.subgraph(EliteNet, which(Labels == which.max(Sizes)))
+```
+
+
+
+Let's take a look at the Giant Component:
+
+
+```{r, eval=TRUE, message=FALSE}
+plot.igraph(EliteNet_giant)
+```
+
+Basic summary:
+
+```{r, eval=TRUE, message=FALSE}
+summary(EliteNet_giant)
+```
+
+
+We will use the giant component as our network to be explored.
+____
+
+<a id='part2'></a>
+
+## 2. Exploring the NETWORK
+
+
+<a id='part21'></a>
+
+### Exploring the Network as a whole
+
+
+* Density: from 0 to 1, where 1 makes it a 'complete' network: there is a link between every pair of nodes.
+
+<center><img src="https://cdn.fs.guides.co/PDn0ImTfSb6QwgIvdoQ8" width="500"></center>
+
+```{r, eval=TRUE, message=FALSE}
+graph.density(EliteNet_giant)
+```
+
+* Diameter: worst case escenario for number of steps for someone to contact another one (only for connected component).
+
+<center><img src="https://github.com/EvansDataScience/CTforGA_Networks/raw/main/diameter.jpeg" width="500"></center>
+
+
+```{r, eval=TRUE, message=FALSE}
+diameter(EliteNet_giant)
+```
+
+
+* Local clustering coefficient of a node is away to measure the level of connectivity its neighbors. If all its neighbors are connected among one another you get 1; if none of them is connected you get zero. Then, the average clustering coefficient tells you the average of those values.
+
+```{r, eval=TRUE, message=FALSE}
+# we need some help beyond Igraph:
+transitivity(EliteNet_giant,type = 'average')
+```
+
+* Shortest path (average): it gets the average of every shortest path among the nodes in the network. A shorter path is the shortest _walk_ from one node to another.
+
+
+```{r, eval=TRUE, message=FALSE}
+average.path.length(EliteNet_giant)
+```
+
+**Random networks** have *small shortest path* and *small clustering coefficient*...Is this the case?. The high clustering coefficient would suggest a **small world**, as most nodes are not neighbors of one another, but most nodes can be reached from every other in few steps.
+
+
+<center><img src="https://github.com/EvansDataScience/CTforGA_Networks/raw/main/networkTypes.jpeg" width="500"></center>
+
+
+
+* Transitivity: How probable is that two business men with a common business friend, are also friends.
+
+
+```{r, eval=TRUE, message=FALSE}
+transitivity(EliteNet_giant)
+```
+
+* Assortativity (degree): it is a measure to see if nodes are connecting to other nodes similar in degree.  Closer to 1 means higher assortativity, closer to -1 diassortativity; while 0 is no assortitivity.
+
+```{r, eval=TRUE, message=FALSE}
+assortativity_degree(EliteNet_giant)
+```
+
+You can also compute assortativity using an attribute of interest:
+
+```{r, eval=TRUE, message=FALSE}
+attrNet=V(EliteNet_giant)$multi
+assortativity(EliteNet_giant,attrNet)
+```
+
+Coloring by attribute:
+
+```{r, eval=TRUE, message=FALSE}
+LabelsColor=attrNet+1
+colors=c('lightblue','magenta')
+plot.igraph(EliteNet_giant,
+       vertex.color = colors[LabelsColor])
+```
+
+<a id='part22'></a>
+
+### Exploration of network communities
+
+A **clique** can be understood a community of nodes where all of them are connected to one another.
+
+* How many cliques can be found in this network?
+
+```{r, eval=TRUE, message=FALSE}
+length(cliques(EliteNet_giant))
+```
+
+If a clique in the network can not be bigger is you add another node, then you have a **maximal clique**.
+
+<center><img src="https://github.com/EvansDataScience/CTforGA_Networks/raw/main/cliqueMaximal.png" width="500"></center>
+
+
+
+* How many maximal cliques are there in this network?
+```{r, eval=TRUE, message=FALSE}
+# How many cliques
+count_max_cliques(EliteNet_giant)
+```
+
+You can find the size of the _maximum cliques_:
+
+```{r, eval=TRUE, message=FALSE}
+clique_num(EliteNet_giant)
+```
+
+
+You can see each maximum clique like this:
+```{r, eval=TRUE, message=FALSE}
+max_cliques(EliteNet_giant,min=8)
+```
+
+If a network presents cliques makes you suspect that there can be **communities**.
+
+This is a huge field of research, let me me show you one of the algorithms known as the [_Louvain method_](https://perso.uclouvain.be/vincent.blondel/research/louvain.html).
+
+
+```{r, eval=TRUE, message=FALSE}
+communities=cluster_louvain(EliteNet_giant)
+(partition=membership(communities))
+```
+
+
+
+Now, use those values to make a plot to highlight the communities:
+
+```{r, eval=TRUE, message=FALSE}
+Labels=partition
+numberOfClasses = length(unique(Labels)) 
+
+library(RColorBrewer)
+colorForScale='Set2'
+colors = brewer.pal(numberOfClasses, colorForScale)
+
+plot.igraph(EliteNet_giant,
+             vertex.color = colors[Labels],
+             edge.color='lightblue')
+```
+
+Let's turn our attention to the nodes and their roles in the network.
+
+<a id='part23'></a>
+
+### Exploration of network actors
+
+
+```{r, eval=TRUE, message=FALSE}
+rounding=3
+degr=round(degree(EliteNet_giant,,normalized=T),rounding)
+close=round(closeness(EliteNet_giant,,normalized=T),rounding)
+betw=round(betweenness(EliteNet_giant,,normalized=T),rounding)
+
+DFCentrality=as.data.frame(cbind(degr,close,betw),stringsAsFactors = F)
+names(DFCentrality)=c('Degree','Closeness','Betweenness')
+```
+
+```{r, eval=TRUE, message=FALSE}
+DFCentrality$person=row.names(DFCentrality)
+row.names(DFCentrality)=NULL
+head(DFCentrality)
+```
+
+
+```{r, eval=TRUE, message=FALSE}
+library(ggplot2)
+ggplot(DFCentrality, aes(x=Betweenness, y=Closeness)) + theme_classic()+
+  scale_size(range = c(1, 25))  + geom_text(aes(label=person,color=Degree)) +
+  scale_colour_gradient(low = "orange", high = "black")
+```
+
+The node with the highest degree could be considered a _hub_ in the network:
+```{r, eval=TRUE, message=FALSE}
+DFCentrality[which.max(DFCentrality$Degree),]
+```
+
+
+We can plot the neighbors of the hub, _its ego network_:
+
+1. Determine the hub name:
+```{r, eval=TRUE, message=FALSE}
+#who
+hub=DFCentrality[which.max(DFCentrality$Degree),]$person
+```
+2. Determine the hub position:
+```{r, eval=TRUE, message=FALSE}
+#where (a character to numeric)
+hubix=as.numeric(row.names(DFCentrality[which.max(DFCentrality$Degree),]))
+```
+3. Request the ego network of the hub:
+
+```{r, eval=TRUE, message=FALSE}
+HubEgonets=make_ego_graph(EliteNet_giant, nodes=hubix)
+# HubEgonets is a list, get the first one:
+HubEgonet=HubEgonets[[1]]
+```
+
+4. Just plot the ego you got:
+```{r, eval=TRUE, message=FALSE}
+egoSizes=rep(5,vcount(HubEgonet)) # sizes '5' for every node
+egoSizes[hubix]=40  # size '40' for this one
+V(HubEgonet)$size=egoSizes # saving sizes
+plot.igraph(HubEgonet,
+             vertex.color = 'yellow',
+             edge.color='lightblue')
+```
+
+Can this network be disconnected? 
+If so, we can compute the minimum number of nodes that must be removed to disconnect the network (create at least two components):
+
+```{r, eval=TRUE, message=FALSE}
+vertex_connectivity(EliteNet_giant)
+```
+
+
+Who is the sole node with the power to break the network?
+
+```{r, eval=TRUE, message=FALSE}
+(cut=articulation_points(EliteNet_giant))
+```
+
+We can highlight the _articulation node_ in the giant component:
+
+
+```{r, eval=TRUE, message=FALSE}
+cutix=which(V(EliteNet_giant)==cut)
+
+allSizes=rep(10,vcount(EliteNet_giant))
+allSizes[cutix]=40
+V(EliteNet_giant)$size=allSizes # saving sizes
+plot.igraph(EliteNet_giant,
+             vertex.color = 'yellow',
+             edge.color='lightblue',vertex.shape='sphere')
+```
+
+<a id='part3'></a>
+
+## Exporting the network
+
+
+
+```{r, eval=TRUE, message=FALSE}
+write_graph(EliteNet, "EliteNetR.graphml", "graphml")
+```
+
+
+
+____
+
+* [Go to Course schedule](https://evansdatascience.github.io/GovernanceAnalytics/)
